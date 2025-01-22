@@ -6,15 +6,25 @@ const puppeteer = require('puppeteer');
 const cheerio = require('cheerio');
 
 // Discord bot setup
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.DirectMessageTyping,
+        GatewayIntentBits.DirectMessageReactions,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildPresences  // optional
+    ] 
+});
 
 // OpenAI setup - use key from .env
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Persistent configuration file
-//const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELET
-const CONFIG_FILE = 'configcs2.json'; // Testing
+const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELET
+//const CONFIG_FILE = 'configcs2.json'; // Testing
 let serverConfigs = {};
 let dmUserConfigs = {};
 
@@ -678,10 +688,40 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     }
 })();
 
-// Start polling for updates
+// Modify the ready event handler
 client.once('ready', async () => {
     console.log('Bot is ready!');
     loadConfig();
+    
+    // Send welcome message to all DM users and servers that don't have configs yet
+    try {
+        // Handle servers
+        client.guilds.cache.forEach(async (guild) => {
+            if (!serverConfigs[guild.id]) {
+                const channel = guild.channels.cache.find(
+                    channel => channel.type === 0 && // 0 is text channel
+                        channel.permissionsFor(guild.members.me).has('SendMessages')
+                );
+                
+                if (channel) {
+                    await channel.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
+                }
+            }
+        });
+
+        // Handle DM users
+        client.users.cache.forEach(async (user) => {
+            if (!user.bot && !dmUserConfigs[user.id]) {
+                try {
+                    await user.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
+                } catch (error) {
+                    console.error(`Failed to send welcome message to user ${user.id}:`, error);
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error sending welcome messages:', error);
+    }
     
     // Initial setup
     try {
@@ -695,4 +735,54 @@ client.once('ready', async () => {
 
     // Check for updates every 2 minutes
     setInterval(checkForUpdates, 120000);
+});
+
+// Add this new event handler for DM channel creation
+client.on('channelCreate', async (channel) => {
+    // Check if this is a DM channel
+    if (channel.type === 1) { // 1 is DM channel type
+        try {
+            // Get the user from the DM channel
+            const user = channel.recipient;
+            if (!user || user.bot) return;
+
+            // Check if this is a new user (not in configs)
+            if (!dmUserConfigs[user.id]) {
+                await channel.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
+                console.log(`Sent welcome message to new DM user ${user.id}`);
+            }
+        } catch (error) {
+            console.error('Error sending welcome message to new DM channel:', error);
+        }
+    }
+});
+
+// Keep existing guildCreate event for servers
+client.on('guildCreate', async (guild) => {
+    try {
+        const channel = guild.channels.cache.find(
+            channel => channel.type === 0 && 
+                channel.permissionsFor(guild.members.me).has('SendMessages')
+        );
+
+        if (channel) {
+            await channel.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
+        }
+    } catch (error) {
+        console.error('Error sending welcome message to new guild:', error);
+    }
+});
+
+// Add this new event handler for when users add the bot
+client.on('userUpdate', async (oldUser, newUser) => {
+    try {
+        // Check if this is a new user interaction and they're not in configs
+        if (!dmUserConfigs[newUser.id] && !newUser.bot) {
+            const dmChannel = await newUser.createDM();
+            await dmChannel.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
+            console.log(`Sent welcome message to new user ${newUser.id}`);
+        }
+    } catch (error) {
+        console.error('Error sending welcome message to updated user:', error);
+    }
 });
