@@ -13,8 +13,8 @@ const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Persistent configuration file
-const CONFIG_FILE = '/app/data/config2.json'; // production DONT DELETE
-//const CONFIG_FILE = 'config.json'; // Testing
+//const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELET
+const CONFIG_FILE = 'configcs2.json'; // Testing
 let serverConfigs = {};
 let dmUserConfigs = {};
 
@@ -50,12 +50,25 @@ function resetServerConfig(guildId) {
     console.log(`Configuration reset for server ${guildId}.`);
 }
 
-// Forum URL to monitor
-const FORUM_URL = 'https://robertsspaceindustries.com/spectrum/community/SC/forum/190048';
+// Update forum URL to monitor
+const FORUM_URL = 'https://forum.paradoxplaza.com/forum/forums/official-information-announcements.1148/';
 
 // Global state for forum monitoring
 let latestThreadUrl = null;
 let lastPatchNotesData = null; // Cache the latest patch notes
+
+// Add this helper function at the top of your file
+async function retry(fn, retries = 3, delay = 2000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await fn();
+        } catch (error) {
+            if (i === retries - 1) throw error;
+            console.log(`Attempt ${i + 1} failed, retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
 
 // Function to fetch the latest thread URL
 async function getLatestThreadUrl() {
@@ -64,21 +77,45 @@ async function getLatestThreadUrl() {
     try {
         console.log('Launching browser to check for updates...');
         browser = await puppeteer.launch({
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            headless: "new"
         });
         const page = await browser.newPage();
 
-        console.log('Navigating to the forum page...');
-        await page.goto(FORUM_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+        await page.setViewport({ width: 1280, height: 800 });
 
+        console.log('Navigating to the forum page...');
+        await page.goto(FORUM_URL, { 
+            waitUntil: ['networkidle0', 'domcontentloaded'],
+            timeout: 60000 
+        });
+
+        // Wait for the content to load
+        console.log('Waiting for content to load...');
+        await page.waitForSelector('div.structItemContainer-group.js-threadList', {
+            timeout: 30000
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Extract the link using evaluate to find the first thread in the normal thread list
         console.log('Extracting latest thread link...');
-        const latestPostLink = await page.$eval('a.thread-subject', (el) => el.getAttribute('href'));
+        const latestPostLink = await page.evaluate(() => {
+            // Get the normal thread list container
+            const normalThreadList = document.querySelector('div.structItemContainer-group.js-threadList');
+            if (!normalThreadList) return null;
+
+            // Get the first thread link from the normal thread list
+            const firstThreadLink = normalThreadList.querySelector('div.structItem-title a[data-xf-init="preview-tooltip"]');
+            return firstThreadLink ? firstThreadLink.getAttribute('href') : null;
+        });
+
         if (!latestPostLink) {
             console.error('No latest thread found.');
             return null;
         }
 
-        const latestPostURL = `https://robertsspaceindustries.com${latestPostLink}`;
+        const latestPostURL = `https://forum.paradoxplaza.com${latestPostLink}`;
         console.log(`Latest thread URL: ${latestPostURL}`);
 
         return latestPostURL;
@@ -93,15 +130,15 @@ async function getLatestThreadUrl() {
     }
 }
 
-// Function to process patch notes with ChatGPT
+// Update ChatGPT prompt for Cities Skylines 2
 async function processPatchNotesWithChatGPT(content) {
     try {
-        const prompt = `You are a helpful assistant that formats patch notes for Star Citizen. Don't include a release date/time! Besides this, YOU MUST INCLUDE EVERYTHING FROM THE TITLE AT THE TOP TO THE END OF THE TECHNICAL CATEGORY! Make sure to show any special requests or any testing/feedback focus. Include all Known issues, Features & Gameplay, Bug Fixes, and Technical. Use markdown for formatting:\n\n${content}`;
+        const prompt = `You are a helpful assistant that formats patch notes for Cities Skylines 2. Format the patch notes in a clear, readable way using markdown formatting. Include the title, any important notices, and organize the content into relevant sections like Features, Bug Fixes, and Technical Updates:\n\n${content}`;
 
         const response = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: 'gpt-4-turbo-preview',
             messages: [
-                { role: 'system', content: 'You are a helpful assistant that formats patch notes for Star Citizen.' },
+                { role: 'system', content: 'You are a helpful assistant that formats patch notes for Cities Skylines 2.' },
                 { role: 'user', content: prompt },
             ],
             max_tokens: 3500,
@@ -114,8 +151,8 @@ async function processPatchNotesWithChatGPT(content) {
     }
 }
 
-// Function to fetch and format patch notes
-async function getLatestPatchNotesContent(url, sourceId = null, isDM = false) {
+// Update patch notes content extraction
+async function getLatestPatchNotesContent(url) {
     let browser;
 
     try {
@@ -128,14 +165,16 @@ async function getLatestPatchNotesContent(url, sourceId = null, isDM = false) {
         console.log('Navigating to the latest patch notes page...');
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
+        // Update selector for Paradox forum structure
         console.log('Waiting for the content to load...');
-        await page.waitForSelector('div.content-main', { timeout: 60000 });
+        await page.waitForSelector('article.message-body', { timeout: 60000 });
 
         console.log('Extracting patch notes content...');
         const html = await page.content();
         const $ = cheerio.load(html);
 
-        const contentMain = $('div.content-main');
+        // Update content extraction for Paradox forum
+        const contentMain = $('article.message-body');
         if (!contentMain.length) {
             console.error('No content found in the main container.');
             return null;
@@ -165,7 +204,7 @@ async function getLatestPatchNotesContent(url, sourceId = null, isDM = false) {
     }
 }
 
-// Function to check for updates and post patch notes
+// Then modify the checkForUpdates function to use retry
 async function checkForUpdates() {
     console.log('Checking for updates...');
     if (Object.keys(serverConfigs).length === 0) {
@@ -174,15 +213,15 @@ async function checkForUpdates() {
     }
 
     try {
-        const latestUrl = await getLatestThreadUrl();
-
+        const latestUrl = await retry(() => getLatestThreadUrl());
+        
         if (latestUrl && latestUrl !== latestThreadUrl) {
             console.log('New thread detected! Fetching patch notes...');
             latestThreadUrl = latestUrl;
 
-            const patchNotesData = await getLatestPatchNotesContent(latestUrl, null, false);
+            const patchNotesData = await retry(() => getLatestPatchNotesContent(latestUrl));
             if (patchNotesData && patchNotesData.content) {
-                lastPatchNotesData = patchNotesData; // Cache the patch notes
+                lastPatchNotesData = patchNotesData;
                 await distributeUpdatesToServers(patchNotesData);
             }
         }
@@ -212,7 +251,7 @@ async function distributeUpdatesToServers(patchNotesData) {
                 }
 
                 const roleMention = config.pingRoleId ? `<@&${config.pingRoleId}>` : '';
-                await channel.send(`${roleMention} **New Patch Has Just Dropped!**\n${url}`);
+                await channel.send(`${roleMention} **New Cities Skylines 2 Patch Notes Available!**\n${url}`);
 
                 for (const [index, part] of parts.entries()) {
                     await channel.send({
@@ -244,7 +283,7 @@ async function distributeUpdatesToServers(patchNotesData) {
                     return;
                 }
 
-                await user.send(`**New Star Citizen Patch Notes!**\n${url}`);
+                await user.send(`**New Cities Skylines 2 Patch Notes!**\n${url}`);
 
                 for (const part of parts) {
                     await user.send(part);
@@ -347,7 +386,7 @@ client.on('interactionCreate', async (interaction) => {
                     if (lastPatchNotesData) {
                         const { url, content } = lastPatchNotesData;
                         
-                        await interaction.editReply(`**Latest Star Citizen Patch Notes:**\n${url}`);
+                        await interaction.editReply(`**Latest Cities Skylines 2 Patch Notes:**\n${url}`);
 
                         const parts = content.match(/.{1,2000}/gs) || [];
                         for (const part of parts) {
@@ -384,7 +423,7 @@ client.on('interactionCreate', async (interaction) => {
                     }
 
                     const roleMention = serverConfig.pingRoleId ? `<@&${serverConfig.pingRoleId}>` : '';
-                    await channel.send(`${roleMention} **Latest Star Citizen Patch Notes:**\n${url}`);
+                    await channel.send(`${roleMention} **Latest Cities Skylines 2 Patch Notes:**\n${url}`);
 
                     const parts = content.match(/.{1,2000}/gs) || [];
                     for (const part of parts) {
@@ -572,7 +611,7 @@ client.login(process.env.TOKEN);
 const commands = [
     {
         name: 'patchnotes',
-        description: 'Fetch the latest Star Citizen patch notes',
+        description: 'Fetch the latest Cities Skylines 2 patch notes',
     },
     {
         name: 'setup',
