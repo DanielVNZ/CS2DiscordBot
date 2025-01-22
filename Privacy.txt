@@ -1,0 +1,96 @@
+1. Introduction
+
+The Star Citizen Patch Notes Discord Bot ("the Bot") is committed to protecting your privacy. This Privacy Policy outlines how data is collected, used, and safeguarded when you use the Bot. By using the Bot, you agree to the practices described in this policy.
+
+2. Data We Collect
+
+The Bot collects only the minimal data necessary to function effectively. This includes:
+
+Server Information:
+
+Server IDs
+
+Channel IDs where the Bot is active
+
+User Information:
+
+User IDs (when commands are used)
+
+Interaction Data:
+
+Logs of commands issued to the Bot
+
+Note: The Bot does not collect, store, or process sensitive personal information such as names, email addresses, or payment information.
+
+3. How We Use the Data
+
+The data collected is used solely for the operation and improvement of the Bot. This includes:
+
+Delivering patch notes to the appropriate channels
+
+Processing user commands (e.g., /patchnotes)
+
+Debugging and troubleshooting issues with the Bot
+
+Enhancing the Bot’s functionality
+
+The data is never sold, shared, or used for advertising or marketing purposes.
+
+4. Data Storage and Security
+
+Data Storage:
+
+Minimal data (e.g., server and channel IDs) is temporarily stored in memory to ensure the Bot operates as intended.
+
+No long-term storage of data occurs unless explicitly stated (e.g., in logs for debugging).
+
+Security Measures:
+
+Data transmitted to and from the Bot is encrypted using industry-standard protocols.
+
+Access to any stored data is restricted to authorized personnel and systems.
+
+5. Third-Party Services
+
+The Bot integrates with third-party services to provide its functionality. These services have their own privacy policies, and by using the Bot, you also agree to those policies:
+
+Puppeteer: Used for web scraping to fetch patch notes from the Star Citizen Spectrum forums.
+
+OpenAI API: Used to format patch notes for clarity and readability.
+
+The Bot does not control these services, and their practices are governed by their respective policies.
+
+6. Data Retention
+
+The Bot retains data only for as long as necessary to fulfill its operational purposes:
+
+Interaction logs are retained temporarily for debugging and issue resolution.
+
+Data is deleted or anonymized when no longer needed.
+
+7. Your Rights
+
+As a user, you have the following rights regarding your data:
+
+Access: Request information about the data collected by the Bot.
+
+Correction: Request corrections to inaccurate data.
+
+Deletion: Request deletion of your data where feasible.
+
+To exercise these rights, please contact the Bot owner.
+
+8. Children’s Privacy
+
+The Bot is not intended for use by individuals under the age of 13. If you believe a child’s data has been collected without parental consent, please contact us immediately.
+
+9. Changes to This Privacy Policy
+
+This Privacy Policy may be updated periodically to reflect changes in the Bot’s functionality or applicable regulations. Users will be notified of significant changes.
+
+10. Contact Information
+
+For questions or concerns about this Privacy Policy, please contact [Your Contact Information or Support Email].
+
+By using the Star Citizen Patch Notes Discord Bot, you acknowledge that you have read, understood, and agreed to this Privacy Policy.
+

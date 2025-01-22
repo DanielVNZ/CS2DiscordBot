@@ -1,0 +1,86 @@
+**Terms of Service for the Star Citizen Patch Notes Discord Bot**
+
+**Last Updated:** 18/01/2025
+
+---
+
+### **1. Acceptance of Terms**
+By inviting or using the Star Citizen Patch Notes Discord Bot ("the Bot"), you agree to abide by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the Bot.
+
+---
+
+### **2. Description of Service**
+The Bot provides automated notifications of Star Citizen patch notes by fetching data from publicly available forums and delivering them to Discord servers. The Bot may also include functionality to manually retrieve patch notes and format content for better readability using external APIs, such as OpenAI.
+
+---
+
+### **3. User Responsibilities**
+When using the Bot, you agree to the following:
+
+- **Compliance:** You will comply with Discord’s Terms of Service and Community Guidelines, as well as any applicable laws and regulations.
+- **Server Permissions:** You will ensure the Bot is granted the correct permissions to function effectively. The Bot requires permissions such as sending messages and accessing specified channels.
+- **Appropriate Use:** You will not use the Bot for illegal, harmful, or malicious purposes, including but not limited to spamming, harassment, or posting prohibited content.
+
+---
+
+### **4. Data Collection and Privacy**
+The Bot may collect the following types of data:
+
+- Server and channel IDs to determine where to post updates.
+- User IDs when commands are used to trigger manual updates.
+
+**Data Usage:**
+- Collected data is used solely for the functionality of the Bot (e.g., delivering patch notes).
+- No personal information is sold, shared, or used for purposes unrelated to the Bot's operation.
+
+For more details, refer to the [Privacy Policy](#).
+
+---
+
+### **5. Third-Party Integrations**
+The Bot uses third-party services, including but not limited to:
+
+- **Puppeteer:** For scraping data from the Star Citizen Spectrum forums.
+- **OpenAI API:** For formatting patch notes for readability.
+
+These third-party services have their own terms and policies, and you agree to adhere to them as part of using the Bot.
+
+---
+
+### **6. Availability and Updates**
+
+- **No Guarantee of Uptime:** While efforts are made to keep the Bot functional, there is no guarantee of uninterrupted service.
+- **Updates:** The Bot may be updated or modified at any time to enhance functionality, fix issues, or comply with policy changes. These updates may change the Bot’s features or behavior.
+
+---
+
+### **7. Limitations of Liability**
+
+The Bot is provided "as is" without warranties of any kind. To the fullest extent permitted by law:
+
+- The Bot owner(s) are not liable for any damages arising from the use or inability to use the Bot.
+- The Bot owner(s) are not responsible for the accuracy of information fetched or posted by the Bot.
+
+---
+
+### **8. Termination**
+
+- The Bot owner(s) reserve the right to terminate or restrict access to the Bot at any time, with or without notice, for any reason, including violations of these Terms.
+- Users may remove the Bot from their servers at any time.
+
+---
+
+### **9. Changes to the Terms**
+
+These Terms may be updated periodically. Continued use of the Bot after changes are made constitutes acceptance of the revised Terms.
+
+---
+
+### **10. Contact Information**
+
+For questions or concerns about these Terms, please contact [Your Contact Information or Support Email].
+
+---
+
+**By using the Star Citizen Patch Notes Discord Bot, you acknowledge that you have read, understood, and agreed to these Terms of Service.**
+
