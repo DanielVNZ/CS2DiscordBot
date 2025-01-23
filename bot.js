@@ -36,7 +36,7 @@ const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Persistent configuration file
-const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELET
+const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELETE
 //const CONFIG_FILE = 'configcs2.json'; // Testing
 let serverConfigs = {};
 let dmUserConfigs = {};
@@ -819,8 +819,8 @@ client.once('ready', async () => {
         console.error('Error during initial setup:', error);
     }
 
-    // Check for updates every 2 minutes
-    setInterval(checkForUpdates, 120000);
+    // Check for updates every 10 minutes
+    setInterval(checkForUpdates, 600000);
 });
 
 // Add this new event handler for DM channel creation
