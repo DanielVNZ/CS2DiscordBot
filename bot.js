@@ -23,8 +23,8 @@ const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Persistent configuration file
-//const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELET
-const CONFIG_FILE = 'configcs2.json'; // Testing
+const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELET
+//const CONFIG_FILE = 'configcs2.json'; // Testing
 let serverConfigs = {};
 let dmUserConfigs = {};
 
