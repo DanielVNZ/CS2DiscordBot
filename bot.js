@@ -23,8 +23,8 @@ const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Persistent configuration file
-const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELET
-//const CONFIG_FILE = 'configcs2.json'; // Testing
+//const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELET
+const CONFIG_FILE = 'configcs2.json'; // Testing
 let serverConfigs = {};
 let dmUserConfigs = {};
 
@@ -61,7 +61,8 @@ function resetServerConfig(guildId) {
 }
 
 // Update forum URL to monitor
-const FORUM_URL = 'https://forum.paradoxplaza.com/forum/forums/official-information-announcements.1148/';
+const FORUM_URL = 'https://forum.paradoxplaza.com/forum/members/cities-skylines-official.1750459/#recent-content';
+const LOGIN_URL = 'https://forum.paradoxplaza.com/forum/login';
 
 // Global state for forum monitoring
 let latestThreadUrl = null;
@@ -80,7 +81,58 @@ async function retry(fn, retries = 3, delay = 2000) {
     }
 }
 
-// Function to fetch the latest thread URL
+// Function to handle login
+async function loginToForum(page) {
+    try {
+        console.log('Navigating to initial page...');
+        await page.goto(FORUM_URL, { waitUntil: 'networkidle0' });
+
+        // Click the initial login button that appears when not authenticated
+        console.log('Clicking initial login button...');
+        await page.waitForSelector('a.button.button--icon.button--icon--login.rippleButton', {
+            timeout: 30000
+        });
+        await Promise.all([
+            page.waitForNavigation({ waitUntil: 'networkidle0' }),
+            page.click('a.button.button--icon.button--icon--login.rippleButton')
+        ]);
+
+        // Wait for login form and enter credentials
+        console.log('On login page, entering credentials...');
+        await page.waitForSelector('input#email--js', { timeout: 30000 });
+        await page.waitForSelector('input#password--js', { timeout: 30000 });
+
+        // Type credentials with delay to simulate human input
+        await page.type('input#email--js', process.env.FORUM_EMAIL, { delay: 100 });
+        await page.type('input#password--js', process.env.FORUM_PASSWORD, { delay: 100 });
+        
+        // Click the login submit button and wait for navigation
+        console.log('Clicking submit button...');
+        await page.waitForSelector('input#submit--js', { timeout: 30000 });
+        await Promise.all([
+            page.waitForNavigation({ waitUntil: 'networkidle0' }),
+            page.click('input#submit--js')
+        ]);
+
+        // Verify we're logged in
+        console.log('Verifying login success...');
+        const isLoggedIn = await page.evaluate(() => {
+            return !document.querySelector('a.button.button--icon.button--icon--login.rippleButton');
+        });
+
+        if (!isLoggedIn) {
+            throw new Error('Login verification failed');
+        }
+
+        console.log('Login successful');
+        return true;
+    } catch (error) {
+        console.error('Login failed:', error);
+        return false;
+    }
+}
+
+// Update the getLatestThreadUrl function
 async function getLatestThreadUrl() {
     let browser;
 
@@ -88,11 +140,17 @@ async function getLatestThreadUrl() {
         console.log('Launching browser to check for updates...');
         browser = await puppeteer.launch({
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
-            headless: "new"
+            headless: "new"  // Change to headless mode
         });
         const page = await browser.newPage();
 
         await page.setViewport({ width: 1280, height: 800 });
+
+        // Login first
+        const loginSuccess = await loginToForum(page);
+        if (!loginSuccess) {
+            throw new Error('Failed to login to forum');
+        }
 
         console.log('Navigating to the forum page...');
         await page.goto(FORUM_URL, { 
@@ -100,24 +158,23 @@ async function getLatestThreadUrl() {
             timeout: 60000 
         });
 
-        // Wait for the content to load
+        // Add a longer wait to ensure content loads
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // Wait for the content to load and extract the first thread
         console.log('Waiting for content to load...');
-        await page.waitForSelector('div.structItemContainer-group.js-threadList', {
+        await page.waitForSelector('.contentRow-title a[href*="/threads/"]', {
             timeout: 30000
         });
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Extract the link using evaluate to find the first thread in the normal thread list
-        console.log('Extracting latest thread link...');
+        // Extract the first post link
+        console.log('Extracting latest post link...');
         const latestPostLink = await page.evaluate(() => {
-            // Get the normal thread list container
-            const normalThreadList = document.querySelector('div.structItemContainer-group.js-threadList');
-            if (!normalThreadList) return null;
-
-            // Get the first thread link from the normal thread list
-            const firstThreadLink = normalThreadList.querySelector('div.structItem-title a[data-xf-init="preview-tooltip"]');
-            return firstThreadLink ? firstThreadLink.getAttribute('href') : null;
+            const firstPost = document.querySelector('.contentRow-title a[href*="/threads/"]');
+            if (!firstPost) return null;
+            
+            console.log('Found thread:', firstPost.textContent);
+            return firstPost.getAttribute('href');
         });
 
         if (!latestPostLink) {
@@ -127,6 +184,9 @@ async function getLatestThreadUrl() {
 
         const latestPostURL = `https://forum.paradoxplaza.com${latestPostLink}`;
         console.log(`Latest thread URL: ${latestPostURL}`);
+
+        // Add a small delay before closing
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         return latestPostURL;
     } catch (error) {
@@ -161,30 +221,34 @@ async function processPatchNotesWithChatGPT(content) {
     }
 }
 
-// Update patch notes content extraction
+// Update getLatestPatchNotesContent to handle public threads
 async function getLatestPatchNotesContent(url) {
     let browser;
 
     try {
         console.log('Launching browser to fetch patch notes...');
         browser = await puppeteer.launch({
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            headless: "new"  // Change to headless mode
         });
         const page = await browser.newPage();
 
         console.log('Navigating to the latest patch notes page...');
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // Update selector for Paradox forum structure
+        // Wait for the content to load
         console.log('Waiting for the content to load...');
         await page.waitForSelector('article.message-body', { timeout: 60000 });
+
+        // Add a small delay to ensure everything loads
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         console.log('Extracting patch notes content...');
         const html = await page.content();
         const $ = cheerio.load(html);
 
-        // Update content extraction for Paradox forum
-        const contentMain = $('article.message-body');
+        // Get the content from the first post
+        const contentMain = $('article.message-body').first();
         if (!contentMain.length) {
             console.error('No content found in the main container.');
             return null;
