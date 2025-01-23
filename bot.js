@@ -102,9 +102,9 @@ async function loginToForum(page) {
             throw new Error('Missing forum credentials in environment variables');
         }
 
-        // Convert environment variables to strings explicitly
+        // Convert environment variables to strings and decode URL-encoded characters
         const email = String(process.env.FORUM_EMAIL);
-        const password = String(process.env.FORUM_PASSWORD);
+        const password = decodeURIComponent(String(process.env.FORUM_PASSWORD));
 
         console.log('Navigating to initial page...');
         await page.goto(FORUM_URL, { waitUntil: 'networkidle0' });
