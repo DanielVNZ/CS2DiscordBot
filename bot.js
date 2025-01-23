@@ -1,5 +1,18 @@
 // Load environment variables from local.env file
-require('dotenv').config();
+try {
+    require('dotenv').config();
+    
+    // Verify required environment variables
+    const requiredEnvVars = ['TOKEN', 'CLIENT_ID', 'OPENAI_API_KEY', 'FORUM_EMAIL', 'FORUM_PASSWORD'];
+    const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    
+    if (missingEnvVars.length > 0) {
+        throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+    }
+} catch (error) {
+    console.error('Error loading environment variables:', error);
+    process.exit(1);
+}
 const { Client, GatewayIntentBits, REST, Routes, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
 const puppeteer = require('puppeteer');
@@ -84,6 +97,15 @@ async function retry(fn, retries = 3, delay = 2000) {
 // Function to handle login
 async function loginToForum(page) {
     try {
+        // Verify environment variables
+        if (!process.env.FORUM_EMAIL || !process.env.FORUM_PASSWORD) {
+            throw new Error('Missing forum credentials in environment variables');
+        }
+
+        // Convert environment variables to strings explicitly
+        const email = String(process.env.FORUM_EMAIL);
+        const password = String(process.env.FORUM_PASSWORD);
+
         console.log('Navigating to initial page...');
         await page.goto(FORUM_URL, { waitUntil: 'networkidle0' });
 
@@ -103,8 +125,8 @@ async function loginToForum(page) {
         await page.waitForSelector('input#password--js', { timeout: 30000 });
 
         // Type credentials with delay to simulate human input
-        await page.type('input#email--js', process.env.FORUM_EMAIL, { delay: 100 });
-        await page.type('input#password--js', process.env.FORUM_PASSWORD, { delay: 100 });
+        await page.type('input#email--js', email, { delay: 100 });
+        await page.type('input#password--js', password, { delay: 100 });
         
         // Click the login submit button and wait for navigation
         console.log('Clicking submit button...');
@@ -127,7 +149,7 @@ async function loginToForum(page) {
         console.log('Login successful');
         return true;
     } catch (error) {
-        console.error('Login failed:', error);
+        console.error('Login failed:', error.message);
         return false;
     }
 }
