@@ -162,7 +162,7 @@ async function getLatestThreadUrl() {
         console.log('Launching browser to check for updates...');
         browser = await puppeteer.launch({
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
-            headless: "new"  // Change to headless mode
+            headless: "new"
         });
         const page = await browser.newPage();
 
@@ -185,22 +185,35 @@ async function getLatestThreadUrl() {
 
         // Wait for the content to load and extract the first thread
         console.log('Waiting for content to load...');
-        await page.waitForSelector('.contentRow-title a[href*="/threads/"]', {
-            timeout: 30000
+        
+        // Updated selector to match the HTML structure
+        await page.waitForSelector('.contentRow-main a[href*="/threads/"]', {
+            timeout: 60000  // Increased timeout
         });
 
-        // Extract the first post link
+        // Extract the first post link with more detailed logging
         console.log('Extracting latest post link...');
         const latestPostLink = await page.evaluate(() => {
-            const firstPost = document.querySelector('.contentRow-title a[href*="/threads/"]');
-            if (!firstPost) return null;
-            
-            console.log('Found thread:', firstPost.textContent);
-            return firstPost.getAttribute('href');
+            // Try multiple possible selectors
+            const selectors = [
+                '.contentRow-main a[href*="/threads/"]',
+                '.contentRow-title a[href*="/threads/"]',
+                'a[href*="/threads/hotfix"]',
+                'a[href*="/threads/patch"]'
+            ];
+
+            for (const selector of selectors) {
+                const element = document.querySelector(selector);
+                if (element) {
+                    console.log(`Found thread using selector: ${selector}`);
+                    return element.getAttribute('href');
+                }
+            }
+            return null;
         });
 
         if (!latestPostLink) {
-            console.error('No latest thread found.');
+            console.error('No latest thread found. Page content:', await page.content());
             return null;
         }
 
@@ -213,6 +226,13 @@ async function getLatestThreadUrl() {
         return latestPostURL;
     } catch (error) {
         console.error('Error fetching latest thread URL:', error);
+        // Add page content logging on error
+        if (browser) {
+            const page = (await browser.pages())[0];
+            if (page) {
+                console.error('Page content at time of error:', await page.content());
+            }
+        }
         return null;
     } finally {
         if (browser) {
