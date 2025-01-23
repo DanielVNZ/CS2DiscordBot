@@ -27,8 +27,14 @@ const client = new Client({
         GatewayIntentBits.DirectMessageReactions,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences  // optional
-    ] 
+        GatewayIntentBits.GuildPresences
+    ],
+    partials: ['CHANNEL'], // Add this for DM support
+    permissions: [
+        'SendMessages',
+        'AttachFiles',  // Add this permission
+        'EmbedLinks'
+    ]
 });
 
 // OpenAI setup - use key from .env
@@ -36,8 +42,8 @@ const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Persistent configuration file
-const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELETE
-//const CONFIG_FILE = 'configcs2.json'; // Testing
+//const CONFIG_FILE = '/app/data/configcs2.json'; // production DONT DELETE
+const CONFIG_FILE = 'configcs2.json'; // Testing
 let serverConfigs = {};
 let dmUserConfigs = {};
 
@@ -245,12 +251,35 @@ async function getLatestThreadUrl() {
 // Update ChatGPT prompt for Cities Skylines 2
 async function processPatchNotesWithChatGPT(content) {
     try {
-        const prompt = `You are a helpful assistant that formats patch notes for Cities Skylines 2. Format the patch notes in a clear, readable way using markdown formatting. Include the title, any important notices, and organize the content into relevant sections like Features, Bug Fixes, and Technical Updates:\n\n${content}`;
+        const prompt = `
+NOTE: This is a direct copy of the patch notes with minimal formatting changes. For the complete and official patch notes, please use the link above.
+
+You are formatting patch notes for Cities Skylines 2. Follow these STRICT rules:
+1. DO NOT remove, change, or summarize ANY content
+2. Keep EVERY SINGLE LINE of text exactly as provided
+3. Preserve ALL bullet points, numbers, and list items
+4. Keep ALL section headers and titles
+5. Only add markdown formatting:
+   - **Bold** for titles and headers
+   - Keep existing bullet points and numbering
+   - Preserve empty lines between sections
+6. Start with the exact title as shown
+7. Include ALL technical details, version numbers, and timestamps
+8. Keep ALL parentheses, special characters, and formatting
+9. If there's a greeting (like "Hi everyone"), keep it exactly as is
+10. you must add this message at the top of the message: Its possible that AI may have changed some of the below, for the full patch notes, click the link above. 
+
+Here are the patch notes to format:
+
+${content}`;
 
         const response = await openai.chat.completions.create({
-            model: 'gpt-4-turbo-preview',
+            model: 'gpt-4o-mini',
             messages: [
-                { role: 'system', content: 'You are a helpful assistant that formats patch notes for Cities Skylines 2.' },
+                { 
+                    role: 'system', 
+                    content: 'You are a precise patch notes formatter. You must keep ALL content exactly as provided, only adding markdown formatting. Never summarize or omit anything.'
+                },
                 { role: 'user', content: prompt },
             ],
             max_tokens: 3500,
@@ -271,7 +300,7 @@ async function getLatestPatchNotesContent(url) {
         console.log('Launching browser to fetch patch notes...');
         browser = await puppeteer.launch({
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
-            headless: "new"  // Change to headless mode
+            headless: "new"
         });
         const page = await browser.newPage();
 
@@ -288,6 +317,11 @@ async function getLatestPatchNotesContent(url) {
         console.log('Extracting patch notes content...');
         const html = await page.content();
         const $ = cheerio.load(html);
+
+        // Get the patch notes image URL - updated selector
+        const imageUrl = $('div.bbImageWrapper img').attr('data-src') || 
+                        $('div.bbImageWrapper img').attr('src');
+        console.log('Found patch notes image:', imageUrl);
 
         // Get the content from the first post
         const contentMain = $('article.message-body').first();
@@ -308,7 +342,7 @@ async function getLatestPatchNotesContent(url) {
             return null;
         }
 
-        return { url, content: formattedContent };
+        return { url, content: formattedContent, imageUrl };
     } catch (error) {
         console.error('Error fetching patch notes content:', error);
         return null;
@@ -320,12 +354,29 @@ async function getLatestPatchNotesContent(url) {
     }
 }
 
-// Then modify the checkForUpdates function to use retry
+// Add this helper function to check if we're near the hour
+function isNearHourMark() {
+    const now = new Date();
+    const minutes = now.getMinutes();
+    // Return true if we're within 5 minutes before or after the hour
+    return minutes >= 55 || minutes <= 5;
+}
+
+// Modify the checkForUpdates function to include timing logic
 async function checkForUpdates() {
     console.log('Checking for updates...');
     if (Object.keys(serverConfigs).length === 0) {
         console.log('No servers configured. Skipping update check.');
         return;
+    }
+
+    const now = new Date();
+    console.log(`Current time: ${now.getHours()}:${now.getMinutes()}`);
+    
+    if (isNearHourMark()) {
+        console.log('Near hour mark - checking with high frequency');
+    } else {
+        console.log('Normal check interval');
     }
 
     try {
@@ -348,7 +399,7 @@ async function checkForUpdates() {
 
 // New function to handle distributing updates to all configured servers
 async function distributeUpdatesToServers(patchNotesData) {
-    const { url, content } = patchNotesData;
+    const { url, content, imageUrl } = patchNotesData;
     const parts = content.match(/.{1,2000}/gs) || [];
 
     // First handle server distributions
@@ -367,8 +418,35 @@ async function distributeUpdatesToServers(patchNotesData) {
                 }
 
                 const roleMention = config.pingRoleId ? `<@&${config.pingRoleId}>` : '';
-                await channel.send(`${roleMention} **New Cities Skylines 2 Patch Notes Available!**\n${url}`);
+                
+                // Send initial message with image
+                if (imageUrl) {
+                    try {
+                        console.log(`Attempting to send image: ${imageUrl}`);
+                        const response = await fetch(imageUrl);
+                        if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+                        
+                        const imageBuffer = await response.arrayBuffer();
+                        
+                        await channel.send({
+                            content: `${roleMention} **Latest Update for Cities Skylines 2**\n${url}`,
+                            files: [{
+                                attachment: Buffer.from(imageBuffer),
+                                name: 'update.png',
+                                description: 'Update Header Image'
+                            }]
+                        });
+                        console.log('Successfully sent message with image');
+                    } catch (error) {
+                        console.error('Failed to send image, detailed error:', error);
+                        console.error('Falling back to text-only message');
+                        await channel.send(`${roleMention} **Latest Update for Cities Skylines 2**\n${url}`);
+                    }
+                } else {
+                    await channel.send(`${roleMention} **Latest Update for Cities Skylines 2**\n${url}`);
+                }
 
+                // Send the patch notes content
                 for (const [index, part] of parts.entries()) {
                     await channel.send({
                         content: part,
@@ -386,7 +464,7 @@ async function distributeUpdatesToServers(patchNotesData) {
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
-    // Then handle DM distributions
+    // Then handle DM distributions with similar image handling
     const dmUserEntries = Object.entries(dmUserConfigs);
     for (let i = 0; i < dmUserEntries.length; i += batchSize) {
         const batch = dmUserEntries.slice(i, i + batchSize);
@@ -399,7 +477,19 @@ async function distributeUpdatesToServers(patchNotesData) {
                     return;
                 }
 
-                await user.send(`**New Cities Skylines 2 Patch Notes!**\n${url}`);
+                // Send initial message with image
+                if (imageUrl) {
+                    await user.send({
+                        content: `**Latest Update for Cities Skylines 2**\n${url}`,
+                        files: [{
+                            attachment: Buffer.from(imageBuffer),
+                            name: 'update.png',
+                            description: 'Update Header Image'
+                        }]
+                    });
+                } else {
+                    await user.send(`**Latest Update for Cities Skylines 2**\n${url}`);
+                }
 
                 for (const part of parts) {
                     await user.send(part);
@@ -427,7 +517,7 @@ async function checkAdminPermission(interaction) {
     if (!interaction.member?.permissions.has('Administrator')) {
         await interaction.reply({
             content: 'This command is only available to server administrators.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
         });
         return false;
     }
@@ -445,7 +535,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (interaction.commandName === 'setup') {
             try {
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
                 // Different handling for DMs vs Server setup
                 if (!interaction.guild) {
@@ -456,7 +546,7 @@ client.on('interactionCreate', async (interaction) => {
                     
                     saveConfig();
                     
-                    await interaction.editReply('Setup complete! You will now receive patch notes automatically in DMs when they are released.');
+                    await interaction.editReply('Setup complete! You will now receive updates automatically in DMs when they are released.');
                     return;
                 }
 
@@ -473,7 +563,7 @@ client.on('interactionCreate', async (interaction) => {
                 saveConfig();
 
                 await interaction.editReply({
-                    content: `Patch notes will now be posted in <#${channel.id}>${
+                    content: `Updates will now be posted in <#${channel.id}>${
                         pingRole ? ` and will ping <@&${pingRole.id}>` : ''
                     }.`
                 });
@@ -481,7 +571,10 @@ client.on('interactionCreate', async (interaction) => {
                 console.log(`Setup complete for server ${interaction.guildId}`);
             } catch (error) {
                 console.error('Error handling /setup command:', error.message);
-                await interaction.editReply('An error occurred while processing your request.');
+                await interaction.editReply({
+                    content: 'An error occurred while processing your request.',
+                    flags: MessageFlags.Ephemeral
+                });
             }
         } else if (interaction.commandName === 'patchnotes') {
             try {
@@ -492,28 +585,50 @@ client.on('interactionCreate', async (interaction) => {
                     const userConfig = dmUserConfigs[interaction.user.id];
                     if (!userConfig) {
                         await interaction.editReply({
-                            content: 'You have not set up the bot for DMs. Please run `/setup` first to receive patch notes.',
-                            ephemeral: true
+                            content: 'You have not set up the bot for DMs. Please run `/setup` first to receive updates.',
+                            flags: MessageFlags.Ephemeral
                         });
                         return;
                     }
 
                     // Use cached patch notes only
                     if (lastPatchNotesData) {
-                        const { url, content } = lastPatchNotesData;
+                        const { url, content, imageUrl } = lastPatchNotesData;
                         
-                        await interaction.editReply(`**Latest Cities Skylines 2 Patch Notes:**\n${url}`);
+                        if (imageUrl) {
+                            try {
+                                console.log(`Attempting to send image in DM: ${imageUrl}`);
+                                const response = await fetch(imageUrl);
+                                if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+                                
+                                const imageBuffer = await response.arrayBuffer();
+                                
+                                await interaction.editReply({
+                                    content: `**Latest Update for Cities Skylines 2: **\n${url}`,
+                                    files: [{
+                                        attachment: Buffer.from(imageBuffer),
+                                        name: 'patchnotes.png',
+                                        description: 'Patch Notes Header Image'
+                                    }]
+                                });
+                            } catch (error) {
+                                console.error('Failed to send image in DM:', error);
+                                await interaction.editReply(`**Latest Update for Cities Skylines 2: **\n${url}`);
+                            }
+                        } else {
+                            await interaction.editReply(`**Latest Update for Cities Skylines 2: **\n${url}`);
+                        }
 
                         const parts = content.match(/.{1,2000}/gs) || [];
                         for (const part of parts) {
                             await interaction.followUp({
                                 content: part,
-                                ephemeral: true
+                                flags: MessageFlags.Ephemeral
                             });
                             await new Promise(resolve => setTimeout(resolve, 500));
                         }
                     } else {
-                        await interaction.editReply('No patch notes are currently cached. Please try again in a moment.');
+                        await interaction.editReply('No updates are currently cached. Please try again in a moment.');
                     }
                     return;
                 }
@@ -523,14 +638,14 @@ client.on('interactionCreate', async (interaction) => {
                 if (!serverConfig) {
                     await interaction.editReply({
                         content: 'This server is not configured. Please ask a server administrator to run `/setup` first.',
-                        ephemeral: true
+                        flags: MessageFlags.Ephemeral
                     });
                     return;
                 }
 
                 // Use cached patch notes only
                 if (lastPatchNotesData) {
-                    const { url, content } = lastPatchNotesData;
+                    const { url, content, imageUrl } = lastPatchNotesData;
                     const channel = await client.channels.fetch(serverConfig.channelId);
                     
                     if (!channel) {
@@ -539,7 +654,30 @@ client.on('interactionCreate', async (interaction) => {
                     }
 
                     const roleMention = serverConfig.pingRoleId ? `<@&${serverConfig.pingRoleId}>` : '';
-                    await channel.send(`${roleMention} **Latest Cities Skylines 2 Patch Notes:**\n${url}`);
+                    
+                    if (imageUrl) {
+                        try {
+                            console.log(`Attempting to send image in server: ${imageUrl}`);
+                            const response = await fetch(imageUrl);
+                            if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+                            
+                            const imageBuffer = await response.arrayBuffer();
+                            
+                            await channel.send({
+                                content: `${roleMention} **Latest Update for Cities Skylines 2**\n${url}`,
+                                files: [{
+                                    attachment: Buffer.from(imageBuffer),
+                                    name: 'update.png',
+                                    description: 'Update Header Image'
+                                }]
+                            });
+                        } catch (error) {
+                            console.error('Failed to send image in server:', error);
+                            await channel.send(`${roleMention} **Latest Update for Cities Skylines 2**\n${url}`);
+                        }
+                    } else {
+                        await channel.send(`${roleMention} **Latest Update for Cities Skylines 2**\n${url}`);
+                    }
 
                     const parts = content.match(/.{1,2000}/gs) || [];
                     for (const part of parts) {
@@ -547,17 +685,20 @@ client.on('interactionCreate', async (interaction) => {
                         await new Promise(resolve => setTimeout(resolve, 500));
                     }
 
-                    await interaction.editReply('Patch notes have been posted.');
+                    await interaction.editReply('Updates have been posted.');
                 } else {
-                    await interaction.editReply('No patch notes are currently cached. Please try again in a moment.');
+                    await interaction.editReply('No updates are currently cached. Please try again in a moment.');
                 }
             } catch (error) {
                 console.error('Error handling /patchnotes command:', error);
-                await interaction.editReply('An error occurred while processing your request.');
+                await interaction.editReply({
+                    content: 'An error occurred while processing your request.',
+                    flags: MessageFlags.Ephemeral
+                });
             }
         } else if (interaction.commandName === 'reset') {
             try {
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
                 // Reset server-specific configuration
                 resetServerConfig(interaction.guildId);
@@ -567,7 +708,10 @@ client.on('interactionCreate', async (interaction) => {
             } catch (error) {
                 console.error('Error handling /reset command:', error.message);
                 try {
-                    await interaction.editReply('An error occurred while processing your request.');
+                    await interaction.editReply({
+                        content: 'An error occurred while processing your request.',
+                        flags: MessageFlags.Ephemeral
+                    });
                 } catch (replyError) {
                     console.error('Failed to edit reply:', replyError.message);
                 }
@@ -597,12 +741,15 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.reply({
                     content: ``,
                     components: [row],
-                    ephemeral: true
+                    flags: MessageFlags.Ephemeral
                 });
             } catch (error) {
                 console.error('Error handling /help command:', error.message);
                 try {
-                    await interaction.reply('An error occurred while processing your request.');
+                    await interaction.reply({
+                        content: 'An error occurred while processing your request.',
+                        flags: MessageFlags.Ephemeral
+                    });
                 } catch (replyError) {
                     console.error('Failed to reply:', replyError.message);
                 }
@@ -613,7 +760,7 @@ client.on('interactionCreate', async (interaction) => {
                 if (!serverConfig) {
                     await interaction.reply({
                         content: 'This server is not configured. Please run `/setup` first.',
-                        ephemeral: true
+                        flags: MessageFlags.Ephemeral
                     });
                     return;
                 }
@@ -633,16 +780,20 @@ client.on('interactionCreate', async (interaction) => {
                     • **Channel:** ${channelName || 'Unknown'}
                     • **Ping Role:** ${pingRole}
                     • **Status:** ${connectionStatus}
+                    • **Updates:** ${lastPatchNotesData ? 'Cached and ready' : 'No updates cached'}
                     `,
-                    ephemeral: true
+                    flags: MessageFlags.Ephemeral
                 });
             } catch (error) {
                 console.error('Error handling /check command:', error.message);
-                await interaction.reply('An error occurred while processing your request.');
+                await interaction.reply({
+                    content: 'An error occurred while processing your request.',
+                    flags: MessageFlags.Ephemeral
+                });
             }
         } else if (interaction.commandName === 'test') {
             try {
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
                 // Get the latest thread URL and patch notes
                 const testUrl = await getLatestThreadUrl();
@@ -662,17 +813,20 @@ client.on('interactionCreate', async (interaction) => {
                 
                 // Distribute to all servers
                 await distributeUpdatesToServers(patchNotesData);
-                await interaction.editReply('Test successful: Latest patch notes have been distributed to all configured servers.');
+                await interaction.editReply('Test successful: Latest updates have been distributed to all configured servers.');
                 
                 // Log the test event
                 console.log(`Test distribution initiated by admin in server ${interaction.guildId}`);
             } catch (error) {
                 console.error('Error handling /test command:', error);
-                await interaction.editReply('An error occurred while testing the distribution system.');
+                await interaction.editReply({
+                    content: 'An error occurred while testing the distribution system.',
+                    flags: MessageFlags.Ephemeral
+                });
             }
         } else if (interaction.commandName === 'forceupdate') {
             try {
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
                 const oldUrl = latestThreadUrl;
                 latestThreadUrl = await getLatestThreadUrl();
@@ -683,24 +837,27 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 if (latestThreadUrl === oldUrl) {
-                    await interaction.editReply('No new patch notes found. Cache is up to date.');
+                    await interaction.editReply('No new updates found. Cache is up to date.');
                     return;
                 }
 
                 const patchNotesData = await getLatestPatchNotesContent(latestThreadUrl);
                 if (!patchNotesData || !patchNotesData.content) {
-                    await interaction.editReply('Failed to fetch patch notes content.');
+                    await interaction.editReply('Failed to fetch updates content.');
                     return;
                 }
 
                 // Update cache
                 lastPatchNotesData = patchNotesData;
-                await interaction.editReply('Successfully updated patch notes cache. Use `/patchnotes` to view the latest notes.');
+                await interaction.editReply('Successfully updated updates cache. Use `/patchnotes` to view the latest updates.');
                 
                 console.log(`Force update initiated by admin in ${interaction.guild ? `server ${interaction.guildId}` : 'DMs'}`);
             } catch (error) {
                 console.error('Error handling /forceupdate command:', error);
-                await interaction.editReply('An error occurred while forcing the update.');
+                await interaction.editReply({
+                    content: 'An error occurred while forcing the update.',
+                    flags: MessageFlags.Ephemeral
+                });
             }
         }
     } else if (interaction.isButton()) {
@@ -709,13 +866,25 @@ client.on('interactionCreate', async (interaction) => {
         if (!hasPermission) return;
 
         if (interaction.customId === 'setup') {
-            await interaction.reply('Please use the `/setup` command to set up the bot. Requires OpenAI API Key - https://platform.openai.com/account/api-keys', { ephemeral: true });
+            await interaction.reply({
+                content: 'Please use the `/setup` command to set up the bot.',
+                flags: MessageFlags.Ephemeral
+            });
         } else if (interaction.customId === 'patchnotes') {
-            await interaction.reply('Please use the `/patchnotes` command to fetch the latest patch notes. /setup must be run once first');
+            await interaction.reply({
+                content: 'Please use the `/patchnotes` command to fetch the latest updates.',
+                flags: MessageFlags.Ephemeral
+            });
         } else if (interaction.customId === 'reset') {
-            await interaction.reply('Please use the `/reset` command to reset the bot setup.');
+            await interaction.reply({
+                content: 'Please use the `/reset` command to reset the bot setup.',
+                flags: MessageFlags.Ephemeral
+            });
         } else if (interaction.customId === 'check') {
-            await interaction.reply('Please use the `/check` command to check the bot setup status.');
+            await interaction.reply({
+                content: 'Please use the `/check` command to check the bot setup status.',
+                flags: MessageFlags.Ephemeral
+            });
         }
     }
 });
@@ -727,22 +896,22 @@ client.login(process.env.TOKEN);
 const commands = [
     {
         name: 'patchnotes',
-        description: 'Fetch the latest Cities Skylines 2 patch notes',
+        description: 'Fetch the latest Cities Skylines 2 updates',
     },
     {
         name: 'setup',
-        description: 'Set up the bot to post patch notes',
+        description: 'Set up the bot to post updates',
         options: [
             {
                 name: 'channel',
                 type: 7, // Channel type
-                description: 'The channel where the bot should post patch notes',
+                description: 'The channel where the bot should post updates',
                 required: true,
             },
             {
                 name: 'pingrole',
                 type: 8, // Role type
-                description: 'The role to ping when new patch notes are posted (optional)',
+                description: 'The role to ping when new updates are posted (optional)',
                 required: false,
             }
         ],
@@ -761,7 +930,7 @@ const commands = [
     },
     {
         name: 'test',
-        description: 'Test the patch notes distribution system (Admin only)',
+        description: 'Test the updates distribution system (Admin only)',
         options: [
             {
                 name: 'message',
@@ -773,7 +942,7 @@ const commands = [
     },
     {
         name: 'forceupdate',
-        description: 'Force check for new patch notes and update cache (Admin only)',
+        description: 'Force check for new updates and update cache (Admin only)',
     }
 ];
 
@@ -794,40 +963,10 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     }
 })();
 
-// Modify the ready event handler
+// Modify the ready event handler to remove welcome messages
 client.once('ready', async () => {
     console.log('Bot is ready!');
     loadConfig();
-    
-    // Send welcome message to all DM users and servers that don't have configs yet
-    try {
-        // Handle servers
-        client.guilds.cache.forEach(async (guild) => {
-            if (!serverConfigs[guild.id]) {
-                const channel = guild.channels.cache.find(
-                    channel => channel.type === 0 && // 0 is text channel
-                        channel.permissionsFor(guild.members.me).has('SendMessages')
-                );
-                
-                if (channel) {
-                    await channel.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
-                }
-            }
-        });
-
-        // Handle DM users
-        client.users.cache.forEach(async (user) => {
-            if (!user.bot && !dmUserConfigs[user.id]) {
-                try {
-                    await user.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
-                } catch (error) {
-                    console.error(`Failed to send welcome message to user ${user.id}:`, error);
-                }
-            }
-        });
-    } catch (error) {
-        console.error('Error sending welcome messages:', error);
-    }
     
     // Initial setup
     try {
@@ -839,8 +978,25 @@ client.once('ready', async () => {
         console.error('Error during initial setup:', error);
     }
 
-    // Check for updates every 10 minutes
-    setInterval(checkForUpdates, 600000);
+    // Add new dynamic interval checker
+    setInterval(() => {
+        const now = new Date();
+        
+        if (isNearHourMark()) {
+            // If we're near the hour mark (±5 minutes), check every minute
+            if (now.getSeconds() === 0) { // Only trigger at the start of each minute
+                checkForUpdates();
+            }
+        } else {
+            // Outside of hour mark, check every 10 minutes
+            if (now.getMinutes() % 10 === 0 && now.getSeconds() === 0) {
+                checkForUpdates();
+            }
+        }
+    }, 1000); // Check every second to maintain precision
+
+    // Run initial check
+    checkForUpdates();
 });
 
 // Add this new event handler for DM channel creation
@@ -854,7 +1010,7 @@ client.on('channelCreate', async (channel) => {
 
             // Check if this is a new user (not in configs)
             if (!dmUserConfigs[user.id]) {
-                await channel.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
+                await channel.send("Hello! Welcome to Cities Skylines 2 Updates bot! Type `/setup` to get started");
                 console.log(`Sent welcome message to new DM user ${user.id}`);
             }
         } catch (error) {
@@ -872,7 +1028,7 @@ client.on('guildCreate', async (guild) => {
         );
 
         if (channel) {
-            await channel.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
+            await channel.send("Hello! Welcome to Cities Skylines 2 Updates bot! Type `/setup` to get started");
         }
     } catch (error) {
         console.error('Error sending welcome message to new guild:', error);
@@ -885,7 +1041,7 @@ client.on('userUpdate', async (oldUser, newUser) => {
         // Check if this is a new user interaction and they're not in configs
         if (!dmUserConfigs[newUser.id] && !newUser.bot) {
             const dmChannel = await newUser.createDM();
-            await dmChannel.send("Hello! Welcome to Cities Skylines 2 Patch Notes bot! Type `/setup` to get started");
+            await dmChannel.send("Hello! Welcome to Cities Skylines 2 Updates bot! Type `/setup` to get started");
             console.log(`Sent welcome message to new user ${newUser.id}`);
         }
     } catch (error) {
